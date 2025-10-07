@@ -1,20 +1,109 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
+  output   = "../src/app/generated/prisma"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-model Post {
-    id        Int      @id @default(autoincrement())
-    name      String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+// User/Project - represents a Surface Labs customer
+model Project {
+  id          String    @id @default(cuid())
+  apiKey      String    @unique @map("api_key")
+  name        String
+  domain      String?   // The website domain they're tracking
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  visitors    Visitor[]
+  events      Event[]
+  
+  @@map("projects")
+}
 
-    @@index([name])
+// Visitor - represents an anonymous or identified user on tracked site
+model Visitor {
+  id            String    @id @default(cuid())
+  visitorId     String    @unique @map("visitor_id") // The vis_abc123_fp789 from client
+  fingerprint   String?   // Browser fingerprint hash
+  projectId     String    @map("project_id")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // User identification (when identify() is called)
+  userId        String?   @map("user_id")
+  userTraits    Json?     @map("user_traits") // Name, email_hash, etc.
+  
+  // Timestamps
+  firstSeen     DateTime  @default(now()) @map("first_seen")
+  lastSeen      DateTime  @updatedAt @map("last_seen")
+  
+  // Metadata
+  initialReferrer String? @map("initial_referrer")
+  initialUtm      Json?   @map("initial_utm") // UTM parameters on first visit
+  
+  // Relations
+  events        Event[]
+  
+  @@index([projectId, visitorId])
+  @@index([projectId, userId])
+  @@index([projectId, lastSeen])
+  @@map("visitors")
+}
+
+// Event - individual tracking events
+model Event {
+  id          String    @id @default(cuid())
+  
+  // Relationships
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visitorId   String    @map("visitor_id")
+  visitor     Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  // Event data
+  eventType   String    @map("event_type") // 'page_view', 'click', 'email_entered', 'custom'
+  eventName   String    @map("event_name") // For custom events: 'signup_completed', etc.
+  properties  Json      // All event-specific data (flexible JSONB)
+  
+  // Session & User context
+  sessionId   String    @map("session_id")
+  userId      String?   @map("user_id") // Null until identify() called
+  
+  // Page context (duplicated for query performance)
+  pageUrl     String    @map("page_url")
+  pageTitle   String?   @map("page_title")
+  referrer    String?
+  
+  // Technical metadata
+  userAgent   String?   @map("user_agent")
+  ipAddress   String?   @map("ip_address") // Could be used for geo-location
+  
+  // Timestamp
+  timestamp   DateTime  @default(now())
+  
+  @@index([projectId, timestamp(sort: Desc)]) // Recent events per project
+  @@index([projectId, eventType, timestamp(sort: Desc)]) // Filter by event type
+  @@index([visitorId, timestamp(sort: Desc)]) // User journey timeline
+  @@index([sessionId, timestamp]) // Session events
+  @@index([userId, timestamp]) // Identified user events
+  @@map("events")
+}
+
+// EventBatch - track incoming batches for debugging/monitoring
+model EventBatch {
+  id          String    @id @default(cuid())
+  batchId     String    @unique @map("batch_id") // From client
+  projectId   String    @map("project_id")
+  
+  eventCount  Int       @map("event_count")
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+  status      String    @default("pending") // pending, processed, failed
+  error       String?   // If processing failed
+  
+  @@index([projectId, receivedAt(sort: Desc)])
+  @@map("event_batches")
 }

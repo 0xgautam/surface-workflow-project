@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Surface Analytics Test Page</title>
+
+    <!-- Surface Analytics Snippet -->
+    <!-- Surface Analytics - Ultra-compact snippet -->
+    <script>
+      !(function () {
+        var a = (window.analytics = window.analytics || []);
+        if (!a.initialize)
+          if (a.invoked)
+            window.console &&
+              console.error &&
+              console.error("Surface snippet included twice.");
+          else {
+            a.invoked = !0;
+            a.methods = ["track", "page", "identify", "ready"];
+            a.factory = function (e) {
+              return function () {
+                var t = Array.prototype.slice.call(arguments);
+                t.unshift(e);
+                a.push(t);
+                return a;
+              };
+            };
+            for (var e = 0; e < a.methods.length; e++) {
+              var t = a.methods[e];
+              a[t] = a.factory(t);
+            }
+            a.load = function (e) {
+              a._writeKey = e;
+              var t = document.createElement("script");
+              t.async = !0;
+              t.src = "/surface_analytics.js";
+              var n = document.getElementsByTagName("script")[0];
+              n.parentNode.insertBefore(t, n);
+            };
+            a.SNIPPET_VERSION = "1.0.0";
+            a.load("proj_test_12345");
+            a.page();
+          }
+      })();
+    </script>
+
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      button {
+        background: #0070f3;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        margin: 10px 5px;
+        font-size: 16px;
+      }
+      button:hover {
+        background: #0051cc;
+      }
+      input {
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+        margin: 10px 5px;
+        width: 300px;
+      }
+      .section {
+        margin: 30px 0;
+        padding: 20px;
+        background: #f5f5f5;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Surface Analytics Test Page</h1>
+    <p>
+      This page tests the Surface Analytics tracking script. Open your browser
+      console and network tab to see events being sent.
+    </p>
+
+    <div class="section">
+      <h2>Click Tracking</h2>
+      <button id="primary-cta" class="btn-primary">
+        Click Me (Primary CTA)
+      </button>
+      <button id="secondary-cta" class="btn-secondary">
+        Click Me (Secondary)
+      </button>
+      <a href="/pricing" id="pricing-link">Go to Pricing</a>
+    </div>
+
+    <div class="section">
+      <h2>Email Tracking</h2>
+      <form id="newsletter-form">
+        <input
+          type="email"
+          id="newsletter-email"
+          name="email"
+          placeholder="Enter your email"
+        />
+        <button type="submit">Subscribe</button>
+      </form>
+    </div>
+
+    <div class="section">
+      <h2>Custom Events</h2>
+      <button id="custom-event-btn">Track Custom Event</button>
+      <button id="identify-btn">Identify User</button>
+    </div>
+
+    <div class="section">
+      <h2>Page Navigation</h2>
+      <button id="spa-navigation">Simulate SPA Navigation</button>
+    </div>
+
+    <script>
+      // Wait for analytics to be ready
+      analytics.ready(function () {
+        console.log("Analytics is ready!");
+        console.log("Visitor ID:", analytics.visitorId);
+      });
+
+      // Custom event tracking
+      document
+        .getElementById("custom-event-btn")
+        .addEventListener("click", function () {
+          analytics.track("button_clicked", {
+            button_name: "Custom Event Button",
+            page_section: "Custom Events",
+            value: 100,
+          });
+          alert("Custom event tracked! Check the console.");
+        });
+
+      // Identify user
+      document
+        .getElementById("identify-btn")
+        .addEventListener("click", function () {
+          analytics.identify("user_12345", {
+            name: "John Doe",
+            email_hash: "hashed_email",
+            plan: "pro",
+          });
+          alert("User identified! Check the console.");
+        });
+
+      // Simulate SPA navigation
+      document
+        .getElementById("spa-navigation")
+        .addEventListener("click", function () {
+          // Change URL without reload (like SPA frameworks do)
+          history.pushState({}, "", "/new-page");
+
+          // Track page view manually
+          analytics.page({
+            page_name: "New Page",
+            section: "Test",
+          });
+
+          alert("SPA navigation tracked! Check the console.");
+        });
+
+      // Form submission
+      document
+        .getElementById("newsletter-form")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+          analytics.track("form_submitted", {
+            form_id: "newsletter-form",
+            form_name: "Newsletter Signup",
+          });
+          alert("Form submission tracked!");
+        });
+    </script>
+  </body>
+</html>
