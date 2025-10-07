@@ -1,7 +1,21 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Manrope, Sora } from "next/font/google";
+
+import { AppSidebar } from "~/components/app-sidebar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "~/components/ui/breadcrumb";
+import { Separator } from "~/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "~/components/ui/sidebar";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -9,17 +23,33 @@ export const metadata: Metadata = {
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
-const geist = Geist({
+const sora = Sora({
   subsets: ["latin"],
-  variable: "--font-geist-sans",
+  variable: "--font-sora",
+});
+
+const manrope = Manrope({
+  weight: ["400", "500", "600", "700", "800"],
+  subsets: ["latin"],
+  variable: "--font-manrope",
 });
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable}`}>
-      <body>{children}</body>
+    <html
+      lang="en"
+      className={`${sora.variable} ${manrope.variable} font-pretendard font-medium`}
+    >
+      <body>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset className="h-screen overflow-y-scroll p-8">
+            {children}
+          </SidebarInset>
+        </SidebarProvider>
+      </body>
     </html>
   );
 }

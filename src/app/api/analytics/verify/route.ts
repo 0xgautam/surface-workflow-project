@@ -39,10 +39,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
+    console.log("Verifying installation for URL:", url);
+
     // 4. Verify installation
     const verifier = new ScriptVerifier();
     const result = await verifier.verifyInstallation(url, api_key);
 
+    console.log("Verification result:", result);
     // 5. Return result
     return NextResponse.json(result);
   } catch (err) {

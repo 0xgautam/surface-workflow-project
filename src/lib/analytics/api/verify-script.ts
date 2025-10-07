@@ -22,6 +22,10 @@ export class ScriptVerifier {
       });
 
       if (!response.ok) {
+        console.error(
+          `Failed to fetch URL: ${response.status} ${response.statusText}`,
+        );
+
         return {
           installed: false,
           snippetFound: false,
@@ -31,41 +35,91 @@ export class ScriptVerifier {
       }
 
       const html = await response.text();
-      const $ = cheerio.load(html);
+
+      const $ = cheerio.load(html, {
+        scriptingEnabled: true,
+      });
+
+      console.log("Fetched HTML length:", html.length);
 
       // 2. Check for snippet in <head>
       let snippetFound = false;
       let correctApiKey = false;
       let scriptLoaded = false;
 
-      // Look for inline script with our snippet pattern
-      $("head script").each((_, element) => {
+      // Method 1: Check all script tags (not just in head, to be more flexible)
+      $("script").each((_, element) => {
         const scriptContent = $(element).html() ?? "";
+        const scriptSrc = $(element).attr("src") ?? "";
 
-        // Check if it's our snippet (contains analytics.load)
-        if (
-          scriptContent.includes("window.analytics") &&
-          scriptContent.includes("analytics.load")
-        ) {
-          snippetFound = true;
+        // Check for inline snippet
+        if (scriptContent) {
+          // Look for our snippet signature
+          if (
+            scriptContent.includes("window.analytics") &&
+            (scriptContent.includes("analytics.load") ||
+              scriptContent.includes("a.load"))
+          ) {
+            snippetFound = true;
+            console.log("✅ Snippet found in script tag");
 
-          // Check if it has the correct API key
-          if (scriptContent.includes(apiKey)) {
-            correctApiKey = true;
+            // Check if it has the correct API key
+            if (scriptContent.includes(apiKey)) {
+              correctApiKey = true;
+              console.log("✅ Correct API key found");
+            } else {
+              console.log(
+                "❌ API key not found in snippet. Looking for:",
+                apiKey,
+              );
+            }
           }
         }
-      });
 
-      // 3. Check for surface_analytics.js script tag
-      $("script").each((_, element) => {
-        const src = $(element).attr("src") ?? "";
+        // Check for surface_analytics.js script tag
         if (
-          src.includes("surface_analytics.js") ||
-          src.includes("analytics.js")
+          scriptSrc.includes("surface_analytics.js") ||
+          scriptSrc.includes("analytics.js")
         ) {
           scriptLoaded = true;
+          console.log("✅ Script file reference found:", scriptSrc);
         }
       });
+
+      // Method 2: Fallback - check raw HTML string (in case Cheerio parsing fails)
+      if (!snippetFound) {
+        console.log("Cheerio didn't find snippet, checking raw HTML...");
+
+        if (
+          html.includes("window.analytics") &&
+          html.includes("analytics.load")
+        ) {
+          snippetFound = true;
+          console.log("✅ Snippet found in raw HTML");
+
+          if (html.includes(apiKey)) {
+            correctApiKey = true;
+            console.log("✅ Correct API key found in raw HTML");
+          }
+        }
+
+        if (
+          html.includes("surface_analytics.js") ||
+          html.includes("/analytics.js")
+        ) {
+          scriptLoaded = true;
+          console.log("✅ Script reference found in raw HTML");
+        }
+      }
+
+      console.log(
+        "Final check - snippetFound:",
+        snippetFound,
+        "correctApiKey:",
+        correctApiKey,
+        "scriptLoaded:",
+        scriptLoaded,
+      );
 
       // 4. Determine installation status
       const installed = snippetFound && correctApiKey;
@@ -74,7 +128,7 @@ export class ScriptVerifier {
       if (installed) {
         message = "Script successfully installed and verified!";
       } else if (snippetFound && !correctApiKey) {
-        message = "Snippet found but API key does not match";
+        message = `Snippet found but API key does not match. Expected: ${apiKey}`;
       } else if (!snippetFound) {
         message =
           "Snippet not found in <head> tag. Please ensure the snippet is installed.";

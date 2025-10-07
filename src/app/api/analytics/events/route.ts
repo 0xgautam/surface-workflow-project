@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const queryParams = {
       api_key: searchParams.get("api_key"),
-      event_type: searchParams.get("event_type"),
       limit: searchParams.get("limit"),
       offset: searchParams.get("offset"),
-      start_date: searchParams.get("start_date"),
-      end_date: searchParams.get("end_date"),
+      event_type: searchParams.get("event_type") ?? undefined,
+      start_date: searchParams.get("start_date") ?? undefined,
+      end_date: searchParams.get("end_date") ?? undefined,
     };
 
     // 2. Validate query schema

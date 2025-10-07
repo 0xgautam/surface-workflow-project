@@ -116,8 +116,6 @@ Building a Segment-like analytics tracking system for Surface Labs. The system c
 
 ### Production Version (Modular Architecture)
 
-**Transition Strategy**: Separation of Concerns
-
 **Module Breakdown**:
 
 ```
@@ -147,7 +145,7 @@ analytics/
 # TypeScript modules → esbuild → Minified IIFE
 pnpm build:analytics
 
-# Output: public/surface_analytics.js (~15KB minified)
+# Output: public/surface_analytics.js
 ```
 
 ---
@@ -193,8 +191,6 @@ pnpm build:analytics
 #### Network Optimization
 
 - **Batching**: 10 events per request instead of 10 separate requests
-- **Compression**: Server uses gzip (handled by Next.js automatically)
-- **Debouncing**: Some events (like scroll) would be debounced (not implemented yet)
 
 ### 3. **Event Tracking Decisions**
 
@@ -207,7 +203,7 @@ pnpm build:analytics
   const isInteractive =
     tagName === "button" ||
     tagName === "a" ||
-    element.hasAttribute("data-track"); // Explicit opt-in
+    element.hasAttribute("data-track-surface"); // Explicit opt-in
   ```
 - **Result**: High-signal click data
 
@@ -293,66 +289,339 @@ if (navigator.sendBeacon) {
 }
 ```
 
-#### Target: ES2017
-
-- **Decision**: Compile to ES2017 (async/await supported)
-- **Coverage**: 95%+ of browsers
-- **Trade-off**: No IE11 support (acceptable in 2025)
-
 ---
 
-## Phase 4: Backend Architecture (Upcoming)
-
-### Planned API Routes
-
-1. **`POST /api/analytics/ingest`**
-   - Receive event batches from script
-   - Validate API key
-   - Upsert visitor, insert events
-   - Return 204 (no content)
-
-2. **`POST /api/analytics/verify-installation`**
-   - Scrape user's website HTML
-   - Check for snippet in `<head>` with correct API key
-   - Return installation status
-
-3. **`GET /api/analytics/events`**
-   - Fetch recent events for dashboard
-   - Filter by api_key, event_type, date range
-   - Paginated results
+## Phase 4: Database Schema & Backend Implementation
 
 ### Database Schema (Prisma)
 
-```prisma
-model Visitor {
-  id          String   @id @default(uuid())
-  fingerprint String   @unique
-  apiKey      String
-  firstSeen   DateTime @default(now())
-  lastSeen    DateTime @updatedAt
-  metadata    Json?
-  events      Event[]
+**Schema Design Decisions**:
 
-  @@index([apiKey])
+1. **Project Model**: Multi-tenancy foundation
+   - Each customer has unique `apiKey`
+   - Domain tracking for verification
+   - One-to-many with visitors and events
+
+2. **Visitor Separation**:
+   - Deduplicate visitor data (1 visitor → many events)
+   - Track anonymous → identified journey
+   - Store user traits separately from events
+
+3. **Event JSONB Properties**:
+   - Support any event structure without migrations
+   - PostgreSQL JSONB indexing for performance
+   - Maximum flexibility for custom events
+
+4. **Denormalized Fields**:
+   - `userId`, `pageUrl` duplicated in Event table
+   - Trade storage for query speed (no JOINs needed)
+   - Critical for analytics performance
+
+5. **Strategic Indexes**:
+   - `(projectId, timestamp DESC)` - recent events per tenant
+   - `(visitorId, timestamp)` - user journey queries
+   - `(eventType, timestamp)` - event type filtering
+   - `(sessionId)` - session analysis
+
+6. **EventBatch Tracking**:
+   - Idempotency (prevent duplicate processing)
+   - Debugging (track batch failures)
+   - Monitoring (processing latency)
+
+### API Routes Implementation
+
+#### 1. **POST /api/analytics/ingest**
+
+**Purpose**: Receive event batches from `surface_analytics.js`
+
+**Flow**:
+
+```
+1. Validate request body (Zod schema)
+2. Verify API key → find Project
+3. Create EventBatch record (status: pending)
+4. Process each event:
+   a. Upsert Visitor (by visitorId)
+   b. Update user_id/traits if identify() called
+   c. Insert Event
+5. Update EventBatch (status: processed/failed)
+6. Return 204 No Content
+```
+
+**Key Decisions**:
+
+- **204 Response**: Standard for analytics (no body needed)
+- **Batch Processing**: All-or-nothing vs. partial success
+  - Chose: Partial success (log errors, process what we can)
+- **Visitor Upsert**: Check existing visitor first
+  - Update `lastSeen`, `userId`, `userTraits` if changed
+- **Error Handling**: Never throw 500 to client (log errors, return success)
+
+**Code Structure**:
+
+```typescript
+// src/app/api/analytics/ingest/route.ts
+export async function POST(request: NextRequest) {
+  // 1. Parse & validate (Zod)
+  // 2. Process batch (EventProcessor service)
+  // 3. Return 204 or error
 }
+```
 
-model Event {
-  id         String   @id @default(uuid())
-  visitorId  String
-  visitor    Visitor  @relation(fields: [visitorId], references: [id])
-  apiKey     String
-  eventType  String
-  eventName  String
-  properties Json
-  userId     String?
-  sessionId  String
-  pageUrl    String
-  timestamp  DateTime @default(now())
+#### 2. **POST /api/analytics/verify**
 
-  @@index([apiKey, timestamp])
-  @@index([visitorId, timestamp])
-  @@index([eventType, timestamp])
+**Purpose**: Verify script installation on user's website
+
+**Flow**:
+
+```
+1. Validate request (url, api_key)
+2. Verify Project exists
+3. Fetch user's website HTML
+4. Parse HTML with cheerio
+5. Check for:
+   a. Snippet in <head>
+   b. Correct API key in snippet
+   c. surface_analytics.js script tag
+6. Return installation status
+```
+
+**Key Decisions**:
+
+- **HTML Scraping**: Use cheerio (server-side jQuery-like)
+- **Verification Logic**:
+  ```typescript
+  snippetFound =
+    html.includes("window.analytics") && html.includes("analytics.load");
+  correctApiKey = html.includes(apiKey);
+  ```
+- **CORS Bypass**: Server-side fetch (no browser CORS issues)
+- **User Agent**: Identify as verification bot
+
+**Edge Cases Handled**:
+
+- Website requires authentication → Returns "can't verify"
+- Website blocks bots → Returns "verification failed"
+- Snippet on other page (not homepage) → User must provide correct URL
+
+#### 3. **GET /api/analytics/events**
+
+**Purpose**: Fetch events for dashboard with filters
+
+**Query Parameters**:
+
+- `api_key` (required)
+- `event_type` (optional filter)
+- `limit` (default: 50, max: 100)
+- `offset` (pagination)
+- `start_date`, `end_date` (time range)
+
+**Flow**:
+
+```
+1. Validate query params (Zod)
+2. Verify Project exists
+3. Build WHERE clause (filters)
+4. Fetch events + visitor info (JOIN)
+5. Transform response
+6. Return paginated results
+```
+
+**Response Format**:
+
+```typescript
+{
+  events: [
+    {
+      id: "evt_123",
+      event: "click",
+      visitor_id: "vis_abc",
+      user_id: "user_789",
+      properties: { ... },
+      timestamp: "2025-10-07T10:30:00Z"
+    }
+  ],
+  pagination: {
+    total: 1250,
+    limit: 50,
+    offset: 0,
+    hasMore: true
+  }
 }
+```
+
+**Performance Optimizations**:
+
+- `orderBy: { timestamp: 'desc' }` - use index
+- `take` & `skip` for pagination
+- `include: { visitor }` - single query JOIN
+- Parallel `Promise.all([events, count])` - fetch count in parallel
+
+### Supporting Services
+
+#### 1. **EventProcessor Service**
+
+**Purpose**: Core event processing logic (reusable)
+
+**Class Structure**:
+
+```typescript
+class EventProcessor {
+  async processBatch(apiKey, events, batchId) {
+    // 1. Verify project
+    // 2. Create EventBatch record
+    // 3. Process each event
+    // 4. Update batch status
+  }
+
+  private async processEvent(projectId, event) {
+    // 1. Upsert visitor
+    // 2. Insert event
+  }
+}
+```
+
+**Upsert Logic**:
+
+```typescript
+// First check if visitor exists
+let visitor = await prisma.visitor.findUnique({
+  where: { visitorId }
+});
+
+if (!visitor) {
+  // Create new visitor
+  visitor = await prisma.visitor.create({ ... });
+} else {
+  // Update if user_id or traits changed
+  if (event.user_id || event.properties?.traits) {
+    await prisma.visitor.update({ ... });
+  }
+}
+```
+
+**Why Separate Service**:
+
+- Reusable (could be used by webhooks, cron jobs)
+- Testable (unit test without HTTP layer)
+- Single responsibility (processing logic only)
+
+#### 2. **ScriptVerifier Service**
+
+**Purpose**: Verify script installation via HTML scraping
+
+**Implementation**:
+
+```typescript
+class ScriptVerifier {
+  async verifyInstallation(url, apiKey) {
+    // 1. Fetch HTML
+    const html = await fetch(url);
+
+    // 2. Parse with cheerio
+    const $ = cheerio.load(html);
+
+    // 3. Check snippet in <head>
+    $("head script").each((_, el) => {
+      const content = $(el).html();
+      if (content.includes("analytics.load")) {
+        snippetFound = true;
+        if (content.includes(apiKey)) {
+          correctApiKey = true;
+        }
+      }
+    });
+
+    // 4. Return status
+    return { installed, snippetFound, scriptLoaded };
+  }
+}
+```
+
+**Why Cheerio**:
+
+- Lightweight (vs. Puppeteer)
+- Fast (no browser overhead)
+- jQuery-like API (familiar)
+- Server-side only (no security issues)
+
+### Validation Layer (Zod)
+
+**Purpose**: Type-safe request/response validation
+
+**Schemas**:
+
+```typescript
+// src/lib/analytics/validation.ts
+export const eventBatchSchema = z.object({
+  api_key: z.string().min(1),
+  events: z.array(eventSchema).min(1),
+  batch_id: z.string().uuid(),
+  sent_at: z.string().datetime(),
+});
+
+export const eventsQuerySchema = z.object({
+  api_key: z.string().min(1),
+  event_type: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  // ...
+});
+```
+
+**Benefits**:
+
+- Runtime validation (catch bad requests)
+- Type inference (TypeScript types from schemas)
+- Clear error messages (Zod's `.flatten()`)
+- Self-documenting (schema = API contract)
+
+### CORS Middleware
+
+**Purpose**: Allow cross-origin requests for analytics
+
+**Implementation**:
+
+```typescript
+// src/middleware.ts
+export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/analytics")) {
+    const response = NextResponse.next();
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    return response;
+  }
+}
+```
+
+**Why Permissive CORS**:
+
+- Analytics scripts must work on any domain
+- Security via API key validation (not origin)
+- Standard pattern (Segment, Amplitude do this)
+
+### Dependencies Added
+
+```bash
+pnpm add cheerio zod  # HTML parsing + validation
+pnpm add -D @types/cheerio  # TypeScript types
+```
+
+### File Structure Created
+
+```
+src/
+├── lib/
+│   └── analytics/
+│       ├── validation.ts          # Zod schemas
+│       ├── event-processor.ts     # Event processing logic
+│       └── script-verifier.ts     # Installation verification
+├── app/
+│   └── api/
+│       └── analytics/
+│           ├── ingest/route.ts    # POST - receive events
+│           ├── verify/route.ts    # POST - verify installation
+│           └── events/route.ts    # GET - fetch events
+└── middleware.ts                  # CORS handling
 ```
 
 ---
@@ -404,8 +673,8 @@ model Event {
 ### Immediate TODOs:
 
 1. ✅ Modular script architecture
-2. ⏳ Backend API routes (ingest, verify, events)
-3. ⏳ Prisma schema + migrations
+2. ✅ Backend API routes (ingest, verify, events)
+3. ✅ Prisma schema + migrations
 4. ⏳ Frontend dashboard (Step 2 UI)
 5. ⏳ Real-time event display (polling/SSE)
 
@@ -428,6 +697,8 @@ model Event {
 - **TypeScript** (type safety)
 - **Prisma** (ORM)
 - **PostgreSQL** (database)
+- **Zod** (validation)
+- **Cheerio** (HTML parsing)
 - **esbuild** (bundling)
 - **TailwindCSS** (UI)
 
@@ -454,6 +725,62 @@ How we'll measure our analytics system:
 - **Event Processing Lag**: <1 second
 - **Script Size**: <20KB gzipped
 - **Uptime**: 99.9%
+
+---
+
+## Phase 5: Current Status & Next Steps
+
+### ✅ Completed Components
+
+1. **Client-Side Analytics Script**
+   - Modular TypeScript architecture (8 separate modules)
+   - Event tracking (page views, clicks, emails, custom events)
+   - Visitor identification (fingerprinting + storage)
+   - Event batching & reliable transport (sendBeacon)
+   - Privacy-first (email hashing)
+   - Browser compatibility (feature detection, fallbacks)
+
+2. **Database Schema**
+   - Multi-tenant design (Project model)
+   - Visitor tracking (anonymous → identified)
+   - Flexible event storage (JSONB properties)
+   - Performance indexes (timestamp DESC, composite keys)
+   - Batch tracking (idempotency, debugging)
+
+3. **Backend API**
+   - `/api/analytics/ingest` - Event ingestion endpoint
+   - `/api/analytics/verify` - Script installation verification
+   - `/api/analytics/events` - Event fetching with filters
+   - Zod validation layer
+   - Service architecture (EventProcessor, ScriptVerifier)
+   - CORS middleware
+
+### ⏳ In Progress / Next Up
+
+1. **Frontend Dashboard (Step 2 of Onboarding)**
+   - Display installation snippet
+   - Real-time event table
+   - "Test Tag" button
+   - Auto-complete step when events detected
+
+2. **Real-time Updates**
+   - Event polling (every 2-3 seconds)
+   - OR Server-Sent Events (bonus)
+
+3. **Onboarding Flow (Step 1)**
+   - Generate unique API key per user
+   - Display installation instructions
+   - Verify installation button
+
+### 🎯 Project Milestones
+
+- [x] Planning & Architecture (Phase 1)
+- [x] Analytics Script Development (Phase 2-3)
+- [x] Database Schema Design (Phase 4)
+- [x] Backend API Implementation (Phase 4)
+- [ ] Frontend Dashboard (Phase 5)
+- [ ] End-to-End Testing
+- [ ] Deployment & Polish
 
 ---
 
