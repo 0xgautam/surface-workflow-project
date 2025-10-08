@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
     // 7. Return paginated response
     return NextResponse.json({
       events: transformedEvents,
+      project,
       pagination: {
         total,
         limit,

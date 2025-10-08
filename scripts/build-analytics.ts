@@ -1,13 +1,8 @@
-/**
- * Build script to bundle analytics modules into single file
- */
-
 import * as esbuild from "esbuild";
-import { readFileSync, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 
 async function build() {
   // Bundle all modules
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   const result = await esbuild.build({
     entryPoints: ["src/lib/analytics/index.ts"],
     bundle: true,
@@ -18,40 +13,43 @@ async function build() {
     target: "es2017",
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const bundled = result.outputFiles[0]?.text;
 
-  // Wrap in IIFE and add initialization logic
-  const wrapped = `
-(function() {
+  // Wrap in IIFE with placeholder for API key injection
+  const wrapped = `(function() {
   'use strict';
   
   ${bundled}
   
+  // Create analytics instance
   const analytics = new __SurfaceAnalytics.Analytics();
   
-  // Handle stub queue from snippet
-  if (window.analytics && Array.isArray(window.analytics)) {
-    const stub = window.analytics;
-    window.surfaceAnalytics = analytics;
-    window.analytics = analytics;
+  // Handle stub queue from snippet (surface array)
+  if (window.surface && Array.isArray(window.surface)) {
+    const stub = window.surface;
     
-    stub.forEach(([method, args]) => {
-      if (typeof analytics[method] === 'function') {
-        analytics[method].apply(analytics, args);
+    // Process existing events in queue
+    stub.forEach((item) => {
+      if (item.event === 'surface.js') {
+        console.log('Surface Analytics: Snippet loaded at', new Date(item['surface.start']));
       }
     });
-  } else {
-    window.surfaceAnalytics = analytics;
-    window.analytics = analytics;
   }
   
-  // Auto-initialize if API key exists
-  if (analytics._writeKey) {
-    analytics.load(analytics._writeKey);
+  // Expose analytics globally
+  window.surface = analytics;
+  window.analytics = analytics;
+  
+  // API key placeholder - will be replaced by /tag.js route
+  const SURFACE_API_KEY = null;
+  
+  // Auto-initialize if API key is present
+  if (SURFACE_API_KEY) {
+    analytics.load(SURFACE_API_KEY);
+  } else {
+    console.warn('Surface Analytics: No API key found. Script should be loaded via /tag.js?id=YOUR_API_KEY');
   }
-})();
-  `.trim();
+})();`;
 
   writeFileSync("public/surface_analytics.js", wrapped);
   console.log("✅ Built surface_analytics.js");

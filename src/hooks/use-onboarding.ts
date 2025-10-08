@@ -7,6 +7,7 @@ import type {
   VerificationResult,
 } from "~/lib/onboarding/types";
 import { ONBOARDING_STEPS } from "~/lib/onboarding/constants";
+import type { Project } from "~/app/generated/prisma";
 
 export function useOnboarding(apiKey: string) {
   const [steps, setSteps] = useState<OnboardingStep[]>(
@@ -105,15 +106,15 @@ export function useOnboarding(apiKey: string) {
         throw new Error("Failed to fetch events");
       }
 
-      const data: { events: AnalyticsEvent[] } = await response.json();
+      const data: { events: AnalyticsEvent[]; project: Project } =
+        await response.json();
 
       if (data.events && data.events.length > 0) {
         setEvents(data.events);
         completeStep("test-events");
       } else {
-        alert(
-          "No events detected yet. Make sure the tag is installed and you've visited your website.",
-        );
+        // redirect user to the test website url
+        window.open("http://localhost:3000/test-analytics.html", "_blank");
       }
     } catch (error) {
       console.error("Test failed:", error);

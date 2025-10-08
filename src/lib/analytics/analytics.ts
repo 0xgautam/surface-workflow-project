@@ -25,9 +25,8 @@ export class Analytics {
   private isReady = false;
 
   constructor() {
-    this.SNIPPET_VERSION =
-      (window as any).analytics?.SNIPPET_VERSION || "1.0.0";
-    this._writeKey = (window as any).analytics?._writeKey || null;
+    this.SNIPPET_VERSION = "1.0.0";
+    this._writeKey = null;
 
     this.visitor = new VisitorIdentifier();
     this.session = new SessionManager();
@@ -36,7 +35,10 @@ export class Analytics {
   }
 
   load(key?: string): void {
-    if (this.initialized) return;
+    if (this.initialized) {
+      console.warn("Surface Analytics: Already initialized");
+      return;
+    }
 
     const apiKey = key ?? this._writeKey;
     if (!apiKey) {
@@ -89,12 +91,12 @@ export class Analytics {
       return;
     }
 
-    const event: AnalyticsEvent = {
+    const trackEvent: AnalyticsEvent = {
       event: eventName,
       properties: properties ?? {},
     };
 
-    this.enqueue(event);
+    this.enqueue(trackEvent);
   }
 
   identify(userId: string, traits?: Record<string, any>): void {
@@ -111,12 +113,12 @@ export class Analytics {
   }
 
   ready(callback: () => void): void {
-    if (typeof callback !== "function") return;
-
-    if (this.isReady) {
-      callback();
-    } else {
-      this.readyCallbacks.push(callback);
+    if (typeof callback === "function") {
+      if (this.isReady) {
+        callback();
+      } else {
+        this.readyCallbacks.push(callback);
+      }
     }
   }
 
@@ -149,15 +151,19 @@ export class Analytics {
     // Track initial page view
     this.page();
 
-    // Setup trackers
+    // Setup click tracking
     this.clickTracker.setup((event) => this.enqueue(event));
+
+    // Setup email tracking
     this.emailTracker.setup((event) => this.enqueue(event));
   }
 
   private enqueue(event: AnalyticsEvent): void {
-    if (!this.queue) return;
+    if (!this.queue) {
+      return;
+    }
 
-    const enrichedEvent: AnalyticsEvent = {
+    const enrichedEvent = {
       ...event,
       visitor_id: this.visitorId,
       user_id: this.session.getUserId(),
@@ -175,8 +181,8 @@ export class Analytics {
     this.readyCallbacks.forEach((callback) => {
       try {
         callback();
-      } catch (err) {
-        console.error("Surface Analytics: Ready callback error", err);
+      } catch (error) {
+        console.error("Surface Analytics: Ready callback error", error);
       }
     });
     this.readyCallbacks = [];

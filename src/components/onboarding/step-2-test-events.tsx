@@ -12,6 +12,25 @@ interface Step2Props {
 }
 
 export function Step2TestEvents({ events, testTag, isTesting }: Step2Props) {
+  const getEventText = (event: AnalyticsEvent) => {
+    switch (event.event) {
+      case "script_init":
+        return "Script Init";
+      case "page_view":
+        return "Page";
+      case "click":
+        return "Click";
+      case "email_entered":
+        return "Email";
+      case "identify":
+        return "Identify";
+      default:
+        return event.event
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Events Table */}
@@ -19,49 +38,42 @@ export function Step2TestEvents({ events, testTag, isTesting }: Step2Props) {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500">
                 Event
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500">
                 Visitor
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500">
                 Metadata
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500">
                 Created At
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-gray-200 bg-white text-[#667085]">
             {events.length > 0 ? (
               events.map((event) => (
                 <tr key={event.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm">
-                    <span className="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
-                      {event.event}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-gray-600">
+                  <td className="px-4 py-3 text-sm">{getEventText(event)}</td>
+                  <td className="px-4 py-3 font-mono text-sm">
                     {event.visitor_id.substring(0, 12)}...
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    <code className="text-xs text-gray-600">
+                    <code className="text-xs">
                       {JSON.stringify(event.properties).substring(0, 50)}...
                     </code>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  <td className="px-4 py-3 text-sm">
                     {new Date(event.timestamp).toLocaleString()}
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td
-                  colSpan={4}
-                  className="px-4 py-6 text-center text-sm text-gray-500"
-                >
-                  <ArrowPathIcon className="mx-auto mb-2 h-5 w-5 animate-spin text-gray-400" />
+                <td colSpan={4} className="px-4 py-6 text-center text-sm">
+                  <ArrowPathIcon className="mx-auto mb-2 h-5 w-5 animate-spin" />
                   No events received yet. Awaiting events from your website...
                 </td>
               </tr>

@@ -17,5 +17,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/analytics/:path*",
+  matcher: ["/api/analytics/:path*", "/tag.js"],
 };
