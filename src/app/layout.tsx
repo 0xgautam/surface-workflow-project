@@ -4,18 +4,7 @@ import { type Metadata } from "next";
 import { Manrope, Sora } from "next/font/google";
 
 import { AppSidebar } from "~/components/app-sidebar";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "~/components/ui/breadcrumb";
-import { Separator } from "~/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -44,7 +33,12 @@ export default function RootLayout({
     >
       <body>
         <SidebarProvider>
-          <AppSidebar />
+          {/* Desktop Sidebar - Hidden on mobile */}
+          <div className="hidden md:block">
+            <AppSidebar />
+          </div>
+
+          {/* Main Content */}
           <SidebarInset className="h-screen overflow-y-scroll p-8">
             {children}
           </SidebarInset>

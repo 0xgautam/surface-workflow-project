@@ -10,6 +10,7 @@ import type { HeroIcon } from "~/lib/utils";
 
 export function NavMain({
   items,
+  onNavigate,
 }: {
   items: {
     title: string;
@@ -17,6 +18,7 @@ export function NavMain({
     icon: HeroIcon;
     isActive?: boolean;
   }[];
+  onNavigate?: () => void;
 }) {
   return (
     <SidebarMenu>
@@ -26,6 +28,7 @@ export function NavMain({
             asChild
             isActive={item.isActive}
             className="text-secondary/50 h-10 px-4 py-1.5 text-base !font-medium"
+            onClick={onNavigate}
           >
             <Link href={item.url}>
               <item.icon className="!size-5 stroke-2" />

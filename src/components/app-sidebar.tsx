@@ -18,16 +18,15 @@ import { NavSecondary } from "~/components/nav-secondary";
 import { TeamSwitcher } from "~/components/team-switcher";
 import {
   Sidebar,
-  // SidebarContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  // SidebarRail,
 } from "~/components/ui/sidebar";
 
 import Logo from "./logo";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { cn } from "~/lib/utils";
 
 // This is sample data.
 const data = {
@@ -84,10 +83,23 @@ const data = {
   navSecondary: [],
 };
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  isMobile?: boolean;
+  onNavigate?: () => void;
+}
+
+export function AppSidebar({
+  isMobile = false,
+  onNavigate,
+  ...props
+}: AppSidebarProps) {
   return (
     <Sidebar
-      className="relative h-full min-h-screen min-w-2xs rounded-tr-2xl rounded-br-2xl px-5 py-6 shadow-[0px_1.2px_3.99px_0px_#00000007,_-3px_4.02px_10.3px_-3px_#00000015_inset]"
+      className={cn(
+        "relative h-full min-h-screen px-5 py-6",
+        !isMobile &&
+          "min-w-2xs rounded-tr-2xl rounded-br-2xl shadow-[0px_1.2px_3.99px_0px_#00000007,_-3px_4.02px_10.3px_-3px_#00000015_inset]",
+      )}
       collapsible={"none"}
       {...props}
     >
@@ -106,6 +118,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               asChild
               isActive={true}
               className="!bg-secondary !text-secondary-foreground h-10 w-full px-4 py-1.5 text-base !font-medium"
+              onClick={onNavigate}
             >
               <Link href={"/"} className="flex items-center gap-3">
                 <svg
@@ -130,7 +143,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <div className="my-1.5 h-px bg-[#dddddd]" />
 
-        <NavMain items={data.navMain} />
+        <NavMain items={data.navMain} onNavigate={onNavigate} />
 
         <NavSecondary items={data.navSecondary} />
       </SidebarHeader>

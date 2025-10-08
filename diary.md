@@ -52,13 +52,20 @@ Building a Segment-like analytics tracking system for Surface Labs. The system c
 
 #### 5. **Script Loading Pattern**
 
-- **Decision**: Two-file approach (snippet + main script)
-- **Snippet** (`<10KB`): Tiny stub loaded synchronously in `<head>`
-  - Creates stub methods that queue calls
-  - Loads main script asynchronously
-- **Main Script** (`surface_analytics.js`): Full implementation loaded async
-  - Replays queued calls from stub
-- **Rationale**: Zero performance impact on page load (async), but tracking starts immediately
+- **Decision**: GTM-style dynamic script loading with API key injection
+- **Snippet** (~500 bytes): Ultra-compact stub loaded synchronously in `<head>`
+  - Creates `surface` array to queue early events
+  - Dynamically loads `/tag.js?id=API_KEY` asynchronously
+  - Google Tag Manager-inspired pattern
+- **Main Script** (`/tag.js`): Served dynamically with API key baked in
+  - Server-side API key injection at request time
+  - Full analytics implementation (~15KB minified)
+  - Auto-initializes with injected API key
+- **Rationale**:
+  - Zero performance impact (async loading)
+  - Secure API key delivery (server-validated)
+  - Industry-standard pattern (familiar to developers)
+  - CDN-friendly (can cache with API key in query param)
 
 ---
 
@@ -254,13 +261,20 @@ analytics.ready(() => console.log("Ready!"));
 
 #### Snippet Compactness
 
-- **Initial Snippet**: ~1.5KB (too large)
-- **Optimized Snippet**: ~500 bytes
+- **Final Snippet**: ~500 bytes (GTM-style)
   ```javascript
-  // Minified, single-letter variables
-  !function(){var a=window.analytics=/* ... */}();
+  // GTM-inspired pattern with dynamic script loading
+  (function (w, d, s, l, i) {
+    w[l] = w[l] || [];
+    w[l].push({ "surface.start": new Date().getTime(), event: "surface.js" });
+    var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s);
+    j.async = true;
+    j.src = "https://www.surface-analytics.com/tag.js?id=" + i;
+    f.parentNode.insertBefore(j, f);
+  })(window, document, "script", "surface", "API_KEY");
   ```
-- **Rationale**: Every byte in `<head>` impacts page load performance
+- **Rationale**: Minimal page weight, industry-standard pattern, familiar to developers
 
 ### 5. **Browser Compatibility**
 
@@ -545,6 +559,12 @@ class ScriptVerifier {
 - jQuery-like API (familiar)
 - Server-side only (no security issues)
 
+**Comment Handling**:
+
+- Strips HTML comments before verification
+- Prevents false positives from commented-out snippets
+- Uses regex: `/<!--[\s\S]*?-->/g`
+
 ### Validation Layer (Zod)
 
 **Purpose**: Type-safe request/response validation
@@ -611,17 +631,47 @@ pnpm add -D @types/cheerio  # TypeScript types
 ```
 src/
 ├── lib/
-│   └── analytics/
-│       ├── validation.ts          # Zod schemas
-│       ├── event-processor.ts     # Event processing logic
-│       └── script-verifier.ts     # Installation verification
+│   ├── analytics/
+│   │   ├── core.ts                    # Config constants & interfaces
+│   │   ├── visitor-id.ts              # Visitor identification
+│   │   ├── session.ts                 # Session management
+│   │   ├── transport.ts               # Event sending (beacon/fetch)
+│   │   ├── queue.ts                   # Event batching
+│   │   ├── analytics.ts               # Main Analytics class
+│   │   ├── index.ts                   # Public exports
+│   │   ├── trackers/
+│   │   │   ├── click-tracker.ts       # Click event tracking
+│   │   │   └── email-tracker.ts       # Email input tracking
+│   │   └── api/
+│   │       ├── validation.ts          # Zod schemas
+│   │       ├── process-event.ts       # Event processor service
+│   │       └── verify-script.ts       # Script verifier service
+│   └── onboarding/
+│       ├── types.ts                   # TypeScript types
+│       └── constants.ts               # Snippet templates
 ├── app/
+│   ├── page.tsx                       # Main onboarding page
+│   ├── tag.js/
+│   │   └── route.ts                   # Dynamic script serving
 │   └── api/
 │       └── analytics/
-│           ├── ingest/route.ts    # POST - receive events
-│           ├── verify/route.ts    # POST - verify installation
-│           └── events/route.ts    # GET - fetch events
-└── middleware.ts                  # CORS handling
+│           ├── ingest/route.ts        # POST - receive events
+│           ├── verify/route.ts        # POST - verify installation
+│           └── events/route.ts        # GET - fetch events
+├── components/
+│   ├── onboarding/
+│   │   ├── onboarding-wrapper.tsx     # Main wrapper
+│   │   ├── onboarding-step.tsx        # Reusable step component
+│   │   ├── step-1-install-tag.tsx     # Step 1 UI
+│   │   ├── step-2-test-events.tsx     # Step 2 UI
+│   │   └── code-snippet.tsx           # Code display component
+│   └── shared/
+│       └── header.tsx                 # Page header
+├── hooks/
+│   └── use-onboarding.ts              # Onboarding state management
+├── middleware.ts                      # CORS handling
+└── scripts/
+    └── build-analytics.ts             # Build script for analytics.js
 ```
 
 ---
@@ -728,49 +778,239 @@ How we'll measure our analytics system:
 
 ---
 
-## Phase 5: Current Status & Next Steps
+## Phase 5: Frontend Dashboard & Dynamic Script Serving
+
+### GTM-Style Script Loading Pattern
+
+**Problem with Initial Approach**:
+
+- Hardcoded API key in snippet (security concern)
+- Multiple script files to manage
+- No server-side validation before serving script
+
+**Solution: Dynamic Script Serving**
+
+Created `/tag.js` route that:
+
+1. Receives API key via query parameter: `/tag.js?id=proj_abc123`
+2. Validates API key against database
+3. Reads bundled `surface_analytics.js`
+4. Injects API key via string replacement: `const SURFACE_API_KEY = "proj_abc123";`
+5. Serves with CORS headers and caching
+
+**Benefits**:
+
+- ✅ API key validated server-side before script loads
+- ✅ Single source of truth for analytics script
+- ✅ Cacheable with CDN (query param uniqueness)
+- ✅ Industry-standard pattern (GTM, GA, Segment all use this)
+
+**Build Process**:
+
+```typescript
+// scripts/build-analytics.ts
+// 1. Bundle TypeScript modules with esbuild
+// 2. Wrap in IIFE with placeholder: const SURFACE_API_KEY = null;
+// 3. /tag.js route replaces placeholder at serve time
+```
+
+**Snippet Format**:
+
+```html
+<!-- Surface Analytics Tag -->
+<script>
+  (function (w, d, s, l, i) {
+    w[l] = w[l] || [];
+    w[l].push({
+      "surface.start": new Date().getTime(),
+      event: "surface.js",
+    });
+    var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s);
+    j.async = true;
+    j.src = "https://www.surface-analytics.com/tag.js?id=" + i;
+    f.parentNode.insertBefore(j, f);
+  })(window, document, "script", "surface", "SURFACE_TAG_ID");
+</script>
+```
+
+### Script Verification Improvements
+
+**Challenge**: Detecting commented-out snippets as valid installations
+
+**Solution**: Strip HTML comments before verification
+
+```typescript
+private removeHtmlComments(html: string): string {
+  // Regex: <!-- anything -->
+  return html.replace(/<!--[\s\S]*?-->/g, '');
+}
+```
+
+**Verification Logic**:
+
+1. Parse HTML with Cheerio (for script tags)
+2. Check raw HTML (with comments removed) as fallback
+3. Look for multiple snippet patterns (single/double quotes)
+4. Verify API key exists in active code only
+
+**Edge Cases Handled**:
+
+- ✅ Commented-out snippets → Not detected (correct)
+- ✅ Multiple quote styles → All detected
+- ✅ Minified vs. formatted → Both work
+- ✅ Script in `<body>` instead of `<head>` → Still detected
+
+### Onboarding Flow Implementation
+
+**Architecture**:
+
+- **State Management**: Custom hook (`use-onboarding.ts`)
+- **Component Structure**: Modular, reusable components
+- **Step Progression**: Automatic when conditions met
+
+**State Hook Features**:
+
+```typescript
+useOnboarding(apiKey) {
+  // State
+  - steps: OnboardingStep[]
+  - currentStepIndex: number
+  - events: AnalyticsEvent[]
+  - verificationResult: VerificationResult
+
+  // Actions
+  - verifyInstallation(url): Promise<void>
+  - testTag(): Promise<void>
+  - updateStepStatus(stepId, status)
+  - completeStep(stepId)
+
+  // Auto-polling (3-second interval)
+  - Fetches events in background
+  - Auto-completes step when events detected
+}
+```
+
+**Component Hierarchy**:
+
+```
+OnboardingWrapper (manages state)
+├── OnboardingStepComponent (step 1)
+│   └── Step1InstallTag
+│       ├── CodeSnippet
+│       ├── URL input
+│       └── Verification status
+└── OnboardingStepComponent (step 2)
+    └── Step2TestEvents
+        ├── Test button
+        └── Events table (real-time)
+```
+
+**Step 1 UI States**:
+
+1. **Initial**: Show snippet + "Test Connection" button
+2. **Verifying**: Button disabled, loading indicator
+3. **Success**: Green checkmark, "Next Step" button
+4. **Failure**: Error message, "Try Again" button
+
+**Step 2 Features**:
+
+- Real-time event polling (3-second interval)
+- Auto-complete when events detected
+- Manual "Test Tag" button
+- Event table with:
+  - Event type badges
+  - Visitor ID (truncated)
+  - Metadata preview
+  - Timestamp
+
+**Conditional Rendering Logic**:
+
+```typescript
+// Step 1 Buttons
+{verificationResult?.installed && <Button>Next Step</Button>}
+{verificationResult && !verificationResult.installed && <Button>Try Again</Button>}
+{!verificationResult && <Button>Test Connection</Button>}
+
+// All buttons disabled when isVerifying=true
+```
+
+### Bug Fixes & Improvements
+
+#### 1. **Analytics Script Initialization Bug**
+
+- **Issue**: Script not auto-initializing, `window.analytics` undefined
+- **Root Cause**: API key placeholder not being replaced by `/tag.js`
+- **Fix**:
+  - Changed placeholder from `analytics._writeKey` to `const SURFACE_API_KEY`
+  - Updated `/tag.js` to replace this specific constant
+  - Constructor no longer tries to read from `window.analytics` (circular dependency)
+
+#### 2. **Verification False Positives**
+
+- **Issue**: Commented-out snippets detected as valid
+- **Root Cause**: Raw HTML check included HTML comments
+- **Fix**: Strip comments with regex before checking
+
+#### 3. **Button State Management**
+
+- **Issue**: Multiple buttons showing simultaneously
+- **Root Cause**: Complex nested conditions
+- **Fix**: Simplified to three clear conditions (success/failure/initial)
+
+### Performance Optimizations
+
+**Script Loading**:
+
+- Async snippet loading (non-blocking)
+- CDN-cacheable with 1-hour TTL
+- Minified output (~15KB → ~5KB gzipped)
+
+**API Efficiency**:
+
+- Event batching (10 events per request)
+- Polling with 3-second interval (not too aggressive)
+- Parallel DB queries (`Promise.all([events, count])`)
+
+**Database Queries**:
+
+- Index-optimized (timestamp DESC for recent events)
+- Limited result sets (max 100 events per query)
+- Denormalized fields (no JOINs needed)
 
 ### ✅ Completed Components
 
 1. **Client-Side Analytics Script**
-   - Modular TypeScript architecture (8 separate modules)
-   - Event tracking (page views, clicks, emails, custom events)
+   - Modular TypeScript architecture (8 modules)
+   - GTM-style dynamic loading
+   - Auto-initialization with server-injected API key
+   - Event tracking (page views, clicks, emails, custom)
    - Visitor identification (fingerprinting + storage)
-   - Event batching & reliable transport (sendBeacon)
-   - Privacy-first (email hashing)
-   - Browser compatibility (feature detection, fallbacks)
+   - Event batching & reliable transport
 
 2. **Database Schema**
    - Multi-tenant design (Project model)
    - Visitor tracking (anonymous → identified)
-   - Flexible event storage (JSONB properties)
-   - Performance indexes (timestamp DESC, composite keys)
-   - Batch tracking (idempotency, debugging)
+   - Flexible event storage (JSONB)
+   - Performance indexes
+   - Batch tracking
 
 3. **Backend API**
-   - `/api/analytics/ingest` - Event ingestion endpoint
-   - `/api/analytics/verify` - Script installation verification
-   - `/api/analytics/events` - Event fetching with filters
-   - Zod validation layer
-   - Service architecture (EventProcessor, ScriptVerifier)
-   - CORS middleware
+   - `/tag.js` - Dynamic script serving with API key injection
+   - `/api/analytics/ingest` - Event ingestion
+   - `/api/analytics/verify` - Script verification (with comment stripping)
+   - `/api/analytics/events` - Event fetching
+   - Zod validation
+   - Service architecture
 
-### ⏳ In Progress / Next Up
-
-1. **Frontend Dashboard (Step 2 of Onboarding)**
-   - Display installation snippet
-   - Real-time event table
-   - "Test Tag" button
-   - Auto-complete step when events detected
-
-2. **Real-time Updates**
-   - Event polling (every 2-3 seconds)
-   - OR Server-Sent Events (bonus)
-
-3. **Onboarding Flow (Step 1)**
-   - Generate unique API key per user
-   - Display installation instructions
-   - Verify installation button
+4. **Frontend Onboarding**
+   - Two-step flow (Install → Test)
+   - Real-time event polling
+   - Auto-step completion
+   - Code snippet with copy button
+   - Script verification with detailed feedback
+   - Conditional button states
+   - Error handling & recovery
 
 ### 🎯 Project Milestones
 
@@ -778,11 +1018,14 @@ How we'll measure our analytics system:
 - [x] Analytics Script Development (Phase 2-3)
 - [x] Database Schema Design (Phase 4)
 - [x] Backend API Implementation (Phase 4)
-- [ ] Frontend Dashboard (Phase 5)
+- [x] Dynamic Script Serving (/tag.js route)
+- [x] Script Verification Improvements
+- [x] Frontend Onboarding Flow (Phase 5)
 - [ ] End-to-End Testing
-- [ ] Deployment & Polish
+- [ ] Production Deployment
+- [ ] Documentation & Polish
 
 ---
 
-_Last Updated: October 7, 2025_
+_Last Updated: October 8, 2025_
 _Version: 1.0.0_

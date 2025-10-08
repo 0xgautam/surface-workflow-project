@@ -24,7 +24,7 @@ export function OnboardingWrapper({ apiKey }: OnboardingWrapperProps) {
   } = useOnboarding(apiKey);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Step 1: Install Tag */}
       <OnboardingStepComponent
         step={steps[0]!}
@@ -35,7 +35,7 @@ export function OnboardingWrapper({ apiKey }: OnboardingWrapperProps) {
       >
         <Step1InstallTag
           apiKey={apiKey}
-          websiteUrl={"http://localhost:3000/test-analytics.html"}
+          websiteUrl={"http://localhost:3001/test-analytics.html"}
           isVerifying={isVerifying}
           verificationResult={verificationResult}
           verifyInstallation={verifyInstallation}
