@@ -16,7 +16,8 @@ async function build() {
   const bundled = result.outputFiles[0]?.text;
 
   // Wrap in IIFE with placeholder for API key injection
-  const wrapped = `(function() {
+  const wrapped = `// @ts-nocheck
+  (function() {
   'use strict';
   
   ${bundled}

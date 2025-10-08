@@ -15,7 +15,7 @@ export class EventQueue {
     private apiKey: string,
     transport?: EventTransport,
   ) {
-    this.transport = transport || new EventTransport();
+    this.transport = transport ?? new EventTransport();
     this.setupFlushInterval();
     this.setupUnloadHandlers();
   }
